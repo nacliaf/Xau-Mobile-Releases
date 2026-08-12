@@ -26,4 +26,7 @@ jobs:
 
       - name: Wait for backend minimum version promotion
         shell: bash
-        run: bash scripts/verify-published-min-version.sh "${{ github.event.release.tag_name }}"
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_ASSETS_JSON: ${{ toJson(github.event.release.assets) }}
+        run: bash scripts/verify-published-min-version.sh "$RELEASE_TAG"

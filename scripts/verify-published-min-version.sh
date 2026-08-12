@@ -9,12 +9,12 @@ if [[ -z "$raw_tag" ]]; then
 fi
 
 expected_version="$raw_tag"
-if [[ "$expected_version" == v* || "$expected_version" == V* ]]; then
+if [[ "$expected_version" == v* ]]; then
     expected_version="${expected_version:1}"
 fi
 
 if [[ ! "$expected_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "error: release tag '$raw_tag' must be exactly MAJOR.MINOR.PATCH with an optional single leading v or V" >&2
+    echo "error: release tag '$raw_tag' must be exactly MAJOR.MINOR.PATCH with an optional single leading lowercase v" >&2
     exit 64
 fi
 
@@ -43,6 +43,23 @@ fi
 if ! command -v "$curl_bin" >/dev/null 2>&1; then
     echo "error: curl executable '$curl_bin' was not found" >&2
     exit 69
+fi
+
+release_assets_json="${RELEASE_ASSETS_JSON:-}"
+if [[ -z "$release_assets_json" ]]; then
+    echo "error: RELEASE_ASSETS_JSON is required to verify published release assets" >&2
+    exit 65
+fi
+if ! jq -e 'type == "array"' <<<"$release_assets_json" >/dev/null 2>&1; then
+    echo "error: RELEASE_ASSETS_JSON must be a valid JSON array" >&2
+    exit 65
+fi
+if ! jq -e '
+    [.[]? | .name? | strings | ascii_downcase] as $names
+    | any($names[]; endswith(".apk")) and any($names[]; endswith(".ipa"))
+' <<<"$release_assets_json" >/dev/null 2>&1; then
+    echo "error: published release must contain at least one .apk and one .ipa asset" >&2
+    exit 65
 fi
 
 body_file="$(mktemp)"
@@ -76,12 +93,13 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
         if [[ "$http_status" == "200" ]]; then
             if ! jq -e . "$body_file" >/dev/null 2>&1; then
                 echo "Attempt ${attempt}/${max_attempts}: HTTP 200, but response was not valid JSON" >&2
-            elif observed_version="$(jq -er '(.data.minVersion? // .minVersion?) | select(type == "string")' "$body_file" 2>/dev/null)"; then
-                if [[ "$observed_version" == "$expected_version" ]]; then
-                    echo "Verified: backend minimum version is ${expected_version}"
-                    exit 0
-                fi
-                echo "Attempt ${attempt}/${max_attempts}: expected ${expected_version}, received ${observed_version}" >&2
+            elif jq -e --arg expected "$expected_version" '
+                (.data.minVersion? // .minVersion?) == $expected
+            ' "$body_file" >/dev/null 2>&1; then
+                echo "Verified: backend minimum version is ${expected_version}"
+                exit 0
+            elif observed_json="$(jq -ce '(.data.minVersion? // .minVersion?) | select(type == "string")' "$body_file" 2>/dev/null)"; then
+                echo "Attempt ${attempt}/${max_attempts}: expected ${expected_version}, received ${observed_json}" >&2
             else
                 echo "Attempt ${attempt}/${max_attempts}: HTTP 200 JSON response did not contain minVersion" >&2
             fi
