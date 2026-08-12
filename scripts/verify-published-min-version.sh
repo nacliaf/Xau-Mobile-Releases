@@ -93,12 +93,14 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
         if [[ "$http_status" == "200" ]]; then
             if ! jq -e . "$body_file" >/dev/null 2>&1; then
                 echo "Attempt ${attempt}/${max_attempts}: HTTP 200, but response was not valid JSON" >&2
-            elif jq -e --arg expected "$expected_version" '
-                (.data.minVersion? // .minVersion?) == $expected
+            elif ! jq -se 'length == 1' "$body_file" >/dev/null 2>&1; then
+                echo "Attempt ${attempt}/${max_attempts}: HTTP 200 response must contain exactly one top-level JSON document" >&2
+            elif jq -se --arg expected "$expected_version" '
+                .[0] | (.data.minVersion? // .minVersion?) == $expected
             ' "$body_file" >/dev/null 2>&1; then
                 echo "Verified: backend minimum version is ${expected_version}"
                 exit 0
-            elif observed_json="$(jq -ce '(.data.minVersion? // .minVersion?) | select(type == "string")' "$body_file" 2>/dev/null)"; then
+            elif observed_json="$(jq -cse '.[0] | (.data.minVersion? // .minVersion?) | select(type == "string")' "$body_file" 2>/dev/null)"; then
                 echo "Attempt ${attempt}/${max_attempts}: expected ${expected_version}, received ${observed_json}" >&2
             else
                 echo "Attempt ${attempt}/${max_attempts}: HTTP 200 JSON response did not contain minVersion" >&2

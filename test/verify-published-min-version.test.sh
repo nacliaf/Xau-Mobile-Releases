@@ -178,6 +178,19 @@ rejects_minimum_version_with_trailing_newline() {
     [[ "$(<"$curl_count")" == "1" && "$output" == *'"4.1.1\n"'* ]]
 }
 
+rejects_multiple_top_level_json_documents() {
+    local curl_count="$TEST_TMP/multiple-json-count"
+    local output
+    if output="$(
+        FAKE_CURL_BODY='{"success":true,"minVersion":"4.1.0"}{"success":true,"minVersion":"4.1.1"}' \
+        FAKE_CURL_COUNT_FILE="$curl_count" \
+        run_verifier v4.1.1 2>&1
+    )"; then
+        return 1
+    fi
+    [[ "$(<"$curl_count")" == "1" && "$output" == *"exactly one top-level JSON document"* ]]
+}
+
 run_case 'accepts an exact MAJOR.MINOR.PATCH minimum' accepts_exact_version
 run_case 'accepts the release tag from the environment' accepts_release_tag_from_environment
 run_case 'strips one leading lowercase v and sends client identity headers' accepts_one_leading_lowercase_v_and_sends_identity_headers
@@ -189,6 +202,7 @@ run_case 'rejects a published release without assets' rejects_release_without_an
 run_case 'retries and fails when the backend minimum mismatches' retries_then_fails_on_mismatch
 run_case 'retries and fails when the backend response is not JSON' retries_then_fails_on_non_json
 run_case 'rejects a minimum version containing a trailing newline' rejects_minimum_version_with_trailing_newline
+run_case 'rejects multiple top-level JSON documents' rejects_multiple_top_level_json_documents
 run_case 'runs after a GitHub release is published' workflow_runs_verifier_for_published_releases
 
 printf '%s passed; %s failed\n' "$passed" "$failed"
